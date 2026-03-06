@@ -1,0 +1,829 @@
+<!-- CSCE 31903 Programming Paradigms 			  -->
+<!-- Fall 2025 									  -->
+<!-- Assignment 6 starter code 					  -->
+<!-- Zach Raper 								  -->
+<!-- 11/21/25   								  -->
+<!-- Translating the link project into javascript -->
+
+
+<head>
+	<title>Assignment 6</title>
+	<meta charset="UTF-8">
+
+
+	<style>
+		body {
+			font-family: sans-serif;
+			text-align: center;
+			padding: 20px;
+		}
+		#dropZone {
+			width: 600px;
+			height: 150px;
+			border: 2px dashed #888;
+			margin: 20px auto;
+			line-height: 150px;
+			color: #888;
+			font-size: 20px;
+			border-radius: 10px;
+			user-select: none;
+		}
+		#dropZone.hover {
+			border-color: #333;
+			color: #333;
+		}
+		canvas {
+			display: block;
+			margin: 20px auto;
+			border: 1px solid black;
+		}
+	</style>
+</head>
+<body>
+
+<br>
+<canvas id="myCanvas" width="1000" height="500" style="border:1px solid #cccccc;"></canvas>
+<br>
+
+<h2>Drag your map JSON file here</h2>
+<div id="dropZone">Drop map file here</div>
+
+<script type="text/javascript">
+
+class Sprite
+{
+	constructor(x1, y1, w1, h1, image_url)
+	{
+		this.x = x1
+		this.y = y1
+		this.w = w1
+		this.h = h1
+		this.px = x1
+		this.py = y1
+		this.speed = 10
+		this.image = new Image()
+		this.image.src = image_url
+		this.isValid = true
+	}
+
+	draw(ctx, roomX, roomY)
+	{
+		ctx.drawImage(this.image, this.x - roomX, this.y - roomY, this.w, this.h)
+	}
+	
+	update()
+	{
+		return this.isValid
+	}
+
+	//methods to identify what a sprite is
+	isTree()		{	return false	}
+	isLink()		{	return false	}
+	isBoomerang()	{	return false	}
+	isTreasure()	{	return false	}
+}
+
+class Tree extends Sprite
+{
+	constructor(x, y, w, h, image_url)
+	{
+		super(x, y, w, h, image_url)
+	}
+	
+	update() //sit_still
+	{
+		return true
+	}
+
+	isTree()	{	return true		}
+}
+
+class Link extends Sprite
+{
+	//class varibles
+	static width = 50
+	static height = 50
+	static framesPerDirection = 11
+	static directions = 4
+	static frames = null
+
+	constructor(x, y, linkSpeed, image_url)
+	{
+		super(x, y, Link.width, Link.height, image_url)
+
+		//instance variables
+		this.px = x
+		this.py = y
+		this.linkSpeed = linkSpeed
+		this.frame = 0
+		this.dir = 0
+
+		//lazy loading images
+		//Link.frames ensures that images are only loaded once
+		if(!Link.frames)
+		{
+			//creates an array to hold the directions
+			Link.frames = []
+			for(let i = 0; i < Link.directions; i++)
+			{
+				//creates an array to hold the frames
+				Link.frames[i] = []
+				for(let j = 0; j < Link.framesPerDirection; j++)
+				{
+					//loads the correct png based on the arrays created
+					const img = new Image()
+					const index = i * Link.framesPerDirection + j + 1
+					img.src = `images/link${index}.png`
+					Link.frames[i][j] = img
+				}
+			}
+		}
+	}
+
+	//method to draw link
+	draw(ctx, roomX, roomY)
+	{
+		//sets imToUse to link1.png
+		let img = this.image
+
+		//checks to make sure the frames exist, there is a direction, and theres a frame at the index
+		if(Link.frames && Link.frames[this.dir] && Link.frames[this.dir][this.frame])
+		{
+			//pull out the candidate frame
+			const candidate = Link.frames[this.dir][this.frame]
+
+			//makes sure the image has actually loaded
+			//.complete checks if the browser has loaded the image
+			//.naturalWidth > 0 checks to see if the image loaded
+			//successfully and is not broken
+			if(candidate.complete && candidate.naturalWidth > 0)
+				img = candidate
+			
+		}
+		
+		ctx.drawImage(img, this.x - roomX, this.y - roomY, this.w, this.h)
+	}
+
+	//the player is the update so we just return true
+	update()
+	{
+		return true
+	}
+
+	//collision handling
+	handleCollision(t)
+	{
+		//right side
+		if(this.px + this.w <= t.x && this.x + this.w >= t.x )
+			this.x = t.x - this.w
+
+		//left side
+		else if(this.px >= t.x + t.w && this.x <= t.x + t.w)
+			this.x = t.x + t.w
+
+		//bottom side
+		if(this.py + this.h <= t.y && this.y + this.h >= t.y)
+			this.y = t.y - this.h
+		
+		//top side
+		else if(this.py >= t.y + t.h && this.y + this.h >= t.y)
+			this.y = t.y + t.h
+	}
+
+	//movement methods so that link moves correctly
+	moveRight()
+	{
+		this.x += this.linkSpeed
+		this.dir = 2
+		this.nextFrame()
+	}
+
+	moveLeft()
+	{
+		this.x -= this.linkSpeed
+		this.dir = 1
+		this.nextFrame()
+	}
+
+	moveDown()
+	{
+		this.y += this.linkSpeed
+		this.dir = 0
+		this.nextFrame()
+	}
+
+	moveUp()
+	{
+		this.y -= this.linkSpeed
+		this.dir = 3
+		this.nextFrame()
+	}
+
+	//saves the previous position
+	savePreviousPosition()
+	{
+		this.px = this.x
+		this.py = this.y
+	}
+
+	//cycles through the frames to the correct link png
+	nextFrame()
+	{
+		this.frame = (this.frame + 1) % Link.framesPerDirection
+	}
+
+	isLink()	{	return true		}
+}
+
+class Boomerang extends Sprite
+{
+	//class varibles
+	static numFrames = 4
+	static frames = null
+	static bWidth = 18
+	static bHeight = 18
+
+	constructor(startX, startY, dir, linkSpeed, image_url)
+	{
+		super(startX, startY, Boomerang.bWidth, Boomerang.bHeight, image_url)
+		const speed = Math.max(1.0, linkSpeed + 2.0)
+
+		//instance varibles
+		this.vx = 0
+		this.vy = 0
+		this.frame = 0
+		this.tick = 0
+		this.alive = true
+
+		//same concept as with link
+		if(!Boomerang.frames)
+		{
+			//creates the array to animate the boomerang
+			Boomerang.frames = new Array(Boomerang.numFrames)
+			for(let i = 0; i < Boomerang.numFrames; i++)
+			{
+				//loads correct png based on the array created
+				const img = new Image()
+				img.src = `images/boomerang${i + 1}.png`
+				Boomerang.frames[i] = img
+			}
+		}
+
+		//switch statement that determines the direction the boomerang moves
+		switch(dir)
+		{
+			//down
+			case 0:
+				this.vx = 0
+				this.vy = speed
+				break
+			//left
+			case 1:
+				this.vx = -speed
+				this.vy = 0
+				break
+			//right
+			case 2:
+				this.vx = speed
+				this.vy = 0
+				break
+			//up
+			case 3:
+				this.vx = 0
+				this.vy = -speed
+				break
+			//default sets to right
+			default:
+				this.vx = speed
+				this.vy = 0
+				break
+		}
+	}
+
+	isBoomerang()	{	return true		}
+	hitObsticle()	{	this.alive = false	}
+
+	//draws the boomerang
+	draw(ctx, roomX, roomY)
+	{
+		const sx = this.x - roomX
+		const sy = this.y - roomY
+		
+		if(Boomerang.frames)
+		{
+			const img = Boomerang.frames[this.frame % Boomerang.numFrames]
+			ctx.drawImage(img, sx, sy, Boomerang.bWidth, Boomerang.bHeight)
+		}
+	}
+
+	//advances the boomerang based on ticks
+	update()
+	{
+		this.x += Math.round(this.vx)
+		this.y += Math.round(this.vy)
+		
+		this.tick++
+
+		if(Boomerang.frames && Boomerang.frames[this.frame] && this.tick % Boomerang.numFrames === 0)
+			this.frame = (this.frame + 1) % Boomerang.numFrames
+
+		return this.alive
+	}
+
+}
+
+class TreasureChest extends Sprite
+{
+	//class variables
+	static tWidth = 25
+	static tHeight = 30
+
+	static chestImage = null
+	static rupeeImage = null
+
+	static invFrames = 5
+	static lifeFrames = 40
+
+	constructor(x, y, chestURL, rupeeURL)
+	{
+		super(x, y, TreasureChest.tWidth, TreasureChest.tHeight, chestURL)
+
+		//instance varibles
+		this.state = "CHEST"
+		this.rupeeFrames = 0
+		this.alive = true
+
+		//TreasureChest.chestImage only loads the image once
+		//instead of this.chestImage which would create copies of
+		//the same image
+		if(!TreasureChest.chestImage)
+		{
+			TreasureChest.chestImage = new Image()
+			TreasureChest.chestImage.src = chestURL
+		}
+
+		if(!TreasureChest.rupeeImage)
+		{
+			TreasureChest.rupeeImage = new Image()
+			TreasureChest.rupeeImage.src = rupeeURL
+		}
+	}
+
+	isTreasure()	{	return true		}
+
+	draw(ctx, roomX, roomY)
+	{
+		//works as an if-else statement, just looks cleaner in my opinion
+		const img = (this.state === "CHEST") ? TreasureChest.chestImage : TreasureChest.rupeeImage
+		ctx.drawImage(img, this.x - roomX, this.y - roomY, TreasureChest.tWidth, TreasureChest.tHeight)
+	}
+
+	//remains alive unless the state gets changes to rupee
+	update()
+	{
+		if(this.state === "RUPEE")
+		{
+			this.rupeeFrames++
+			if(this.rupeeFrames >= TreasureChest.lifeFrames)
+				this.alive = false
+		}
+		return this.alive
+	}
+
+	//handles collision with link, increments the rupee counter
+	collideWithLink(link)
+	{
+		if(this.state === "CHEST")
+		{
+			link.handleCollision(this)
+			this.state = "RUPEE"
+			this.rupeeFrames = 0
+		}
+		else
+		{
+			if(this.rupeeFrames >= TreasureChest.invFrames)
+			{
+				this.alive = false
+				rupeeCounter++
+			}
+		}
+	}
+
+	//handles collision with a boomerang, increments the rupee counter
+	collideWithBoomerang(b)
+	{
+		if(this.state === "CHEST")
+		{
+			b.hitObsticle()
+			this.state = "RUPEE"
+			this.rupeeFrames = 0
+		}
+		else
+		{
+			if(this.rupeeFrames >= TreasureChest.invFrames)
+			{
+				this.alive = false
+				b.hitObsticle()
+				rupeeCounter++
+			}
+		}
+	}
+}
+
+class Model
+{
+	constructor()
+	{
+		//arrays for sprites, add queue, and remove queue
+		this.sprites  = []
+		this.toAdd 	  = []
+		this.toRemove = []
+		// this.sprites.push(new Fish(200, 100, 68, 34, "fish.png"))
+		// this.turtle = new Turtle(50, 50, 80, 59, "turtle.png")
+		this.link = new Link(100, 100, 10, "images/link1.png")
+		this.sprites.push(this.link)
+	}
+
+	//throws the boomerang
+	throwBoomerang()
+	{
+		const cx = this.link.x + this.link.w / 2 - 9
+		const cy = this.link.y + this.link.h / 2 - 9
+		const dir = this.link.dir
+		const ls = this.link.linkSpeed
+		this.queueAdd(new Boomerang(cx, cy, dir, ls, "images/boomerang1.png"))
+	}
+
+	//collison checking
+	doesCollisionOccur(a, b)
+	{
+		if(a.x >= b.x + b.w)
+			return false
+		if(a.x + a.w <= b.x)
+			return false
+		if(a.y >= b.y + b.h)
+			return false
+		if(a.y + a.h <= b.y)
+			return false
+		return true
+	}
+
+	//queues
+	queueAdd(s)
+	{
+		this.toAdd.push(s)
+	}
+
+	queueRemove(s)
+	{
+		this.toRemove.push(s)
+	}
+
+	//handles the collision between the diffent sprites
+	update()
+	{
+		//... acts like the slice method
+		//snapshot for the inner loop
+		const snapshot = [...this.sprites]
+
+		//outer loop
+		for(let i = 0; i < this.sprites.length;)
+		{
+			const s1 = this.sprites[i]
+
+			if(this.toRemove.includes(s1))
+			{
+				this.sprites.splice(i, 1)
+				continue
+			}
+		
+
+			const alive = s1.update()
+			if(!alive)
+			{
+				this.sprites.splice(i, 1)
+				continue
+			}
+
+			let killCurrent = false
+
+			//inner loop goes over  only the snapshot
+			//equivilant of for(Sprite s2 : snapshot)
+			for(const s2 of snapshot)
+			{
+				if(s1 === s2)
+					continue
+				if(this.toRemove.includes(s2))
+					continue
+				if(!this.doesCollisionOccur(s1, s2))
+					continue
+
+				//link vs tree
+				if(s1.isLink() && s2.isTree())
+					s1.handleCollision(s2)
+
+				else if(s2.isLink() && s1.isTree())
+					s2.handleCollision(s1)
+
+				//link vs treasure
+				else if(s1.isLink() && s2.isTreasure())
+					s2.collideWithLink(this.link)
+
+				//took this out because it would increment the rupee counter
+				//by 2 instead of by 1. works the same without it
+				// else if(s2.isLink() && s1.isTreasure())
+				// 	s1.collideWithLink(this.link)
+
+				//boomerang vs tree, removes the boomerang sprite after colliding
+				else if(s1.isBoomerang() && s2.isTree())
+				{
+					s1.hitObsticle()
+					killCurrent = true
+				}
+
+				else if(s2.isBoomerang() && s1.isTree())
+				{
+					s2.hitObsticle()
+					this.queueRemove(s2)
+				}
+
+				//boomerang vs treasure, removes boomerang, but also collects rupees
+				else if(s1.isBoomerang() && s2.isTreasure())
+					s2.collideWithBoomerang(s1)
+
+				else if(s2.isBoomerang() && s1.isTreasure())
+					s1.collideWithBoomerang(s2)
+
+				if(killCurrent)
+					break
+			}
+
+			//removes sprites that flag killCurrent
+			if(killCurrent)
+			{
+				this.sprites.splice(i, 1)
+				continue
+			}
+
+			//moves on to the next sprite that wasn't removed
+			i++
+		}
+		
+		//methods to prevent concurrency errors
+		//clears the toRemove array
+		if(this.toRemove.length > 0)
+		{
+			this.sprites = this.sprites.filter(s => !this.toRemove.includes(s))
+			this.toRemove = []
+		}
+
+		//clears the toAdd array
+		if(this.toAdd.length > 0)
+		{
+			this.sprites.push(...this.toAdd)
+			this.toAdd = []
+		}
+	}
+
+	// this reads the json file. Note that turtleX and turtleY are stored in the .json file
+	// also note that f is each entry in the fishes array and f.x and f.y are the attributes of
+	// each object in that array
+	// if you've saved w and h in your .json, use those instead of hardcoding width and height
+	// this function is called upon the event of dragging/dropping the json file onto the page
+	loadMap(mapData) 
+	{
+		//clear the current sprites before loading from file
+
+		const link = this.link
+
+		this.sprites = [];
+		this.link = link
+		this.sprites.push(this.link);
+
+		if(mapData.trees)
+		{
+			for(let i = 0; i < mapData.trees.length; i++) {
+				let t = mapData.trees[i];
+				let tree = new Tree(t.x, t.y, 50, 60, "images/tree.png");
+				this.sprites.push(tree);
+			}
+		}
+
+		//added method to also add chests and rupees to the map
+		if(mapData.chests)
+		{
+			for(let i = 0; i < mapData.chests.length; i++)
+			{
+				let c = mapData.chests[i]
+				let chest = new TreasureChest(c.x, c.y, "images/treasurechest.png", "images/rupee.png")
+
+				if(c.state === "rupee")
+				{
+					chest.state = "RUPEE"
+					chest.rupeeFrames = 0
+				}
+				this.sprites.push(chest)
+			}
+		}
+		console.log("Map loaded:", mapData);
+	}
+}
+
+//global variables
+const gameWindowWidth = 1000
+const gameWindowHeight = 500
+let rupeeCounter = 0
+let rupeeIcon = new Image()
+rupeeIcon.src = "images/rupee.png"
+//used for length and width of our rupee image
+const iconSize = 24
+
+class View
+{
+	constructor(model)
+	{
+		this.model = model
+		this.canvas = document.getElementById("myCanvas")
+		this.currRoomX = 0
+		this.currRoomY = 0
+	}
+
+	update()
+	{
+		let ctx = this.canvas.getContext("2d")
+		ctx.clearRect(0, 0, gameWindowWidth, gameWindowHeight)
+		//dark green background fill color
+		ctx.fillStyle = "rgb(72, 152, 72)"
+		ctx.fillRect(0, 0, gameWindowWidth, gameWindowHeight)
+
+		//moves the view whenever half of links model crosses into a new area
+		let centerX =  this.model.link.x + this.model.link.w / 2
+		let roomXMultiplier = Math.floor(centerX / gameWindowWidth)
+		this.currRoomX = roomXMultiplier * gameWindowWidth;
+
+		let centerY = this.model.link.y + this.model.link.h / 2
+		let roomYMultipler = Math.floor(centerY / gameWindowHeight)
+		this.currRoomY = roomYMultipler * gameWindowHeight
+
+
+		for(let i = 0; i < this.model.sprites.length; i++)
+		{
+			let sprite = this.model.sprites[i]
+			sprite.draw(ctx, this.currRoomX, this.currRoomY)
+		}
+
+		//rupee counter displayed in the top right
+		ctx.drawImage(rupeeIcon, gameWindowWidth - iconSize - 10, 10, iconSize, iconSize)
+		ctx.fillStyle = "red"
+		ctx.font = "24px Arial"
+		ctx.textAlign = "right"
+		ctx.fillText("Rupee: " + rupeeCounter, gameWindowWidth - iconSize - 10, 30)
+	}
+}
+
+
+
+
+
+
+
+class Controller
+{
+	constructor(model, view)
+	{
+		this.model = model
+		this.view = view
+		this.key_right = false
+		this.key_left = false
+		this.key_up = false
+		this.key_down = false
+		this.key_space = false
+		let self = this
+		//view.canvas.addEventListener("click", function(event) { self.onClick(event) })
+		document.addEventListener('keydown', function(event) { self.keyDown(event) }, false)
+		document.addEventListener('keyup', function(event) { self.keyUp(event) }, false)
+	}
+
+	// onClick(event)
+	// {
+	// 	this.model.onclick(event.pageX - this.view.canvas.offsetLeft, event.pageY - this.view.canvas.offsetTop)
+	// }
+
+	keyDown(event)
+	{
+		if(event.keyCode == 39) 
+			this.key_right = true
+		else if(event.keyCode == 37) 
+			this.key_left = true
+		else if(event.keyCode == 38) 
+			this.key_up = true
+		else if(event.keyCode == 40) 
+			this.key_down = true
+		else if(event.keyCode == 32)
+			this.key_space = true
+	}
+
+	keyUp(event)
+	{
+		if(event.keyCode == 39) 
+			this.key_right = false
+		else if(event.keyCode == 37) 
+			this.key_left = false
+		else if(event.keyCode == 38) 
+			this.key_up = false
+		else if(event.keyCode == 40) 
+			this.key_down = false
+		else if(event.keyCode == 32)
+			this.key_space = false
+	}
+
+	//handles links movement as well as throwing the boomerang
+	update()
+	{
+		const link = this.model.link
+		link.savePreviousPosition()
+		
+		if(this.key_right) 
+			link.moveRight()
+		else if(this.key_left)
+			link.moveLeft()
+		if(this.key_up) 
+			link.moveUp()
+		else if(this.key_down) 
+			link.moveDown()
+
+		if(this.key_space)
+		{
+			this.model.throwBoomerang()
+			this.key_space = false
+		}
+	}
+}
+
+
+
+
+
+class Game
+{
+	constructor()
+	{
+		this.model = new Model();
+		this.view = new View(this.model);
+		this.controller = new Controller(this.model, this.view);
+	
+		//this code will allow you to drag and drop your map instead of hardcoding it!
+		//do not change this code
+		var dropZone = document.getElementById("dropZone");
+		var self = this;
+
+		// Prevent default drag behaviors
+		["dragenter", "dragover", "dragleave", "drop"].forEach(function(eventName) {
+		  dropZone.addEventListener(eventName, function(e) { e.preventDefault(); e.stopPropagation(); });
+		});
+
+		// Highlight drop zone when dragging over
+		["dragenter", "dragover"].forEach(function(eventName) {
+		  dropZone.addEventListener(eventName, function() { dropZone.classList.add("hover"); });
+		});
+
+		["dragleave", "drop"].forEach(function(eventName) {
+		  dropZone.addEventListener(eventName, function() { dropZone.classList.remove("hover"); });
+		});
+
+		// Handle dropped files
+		dropZone.addEventListener("drop", function(e) {
+			var file = e.dataTransfer.files[0];
+			if (!file) return;
+			if (!file.name.endsWith(".json")) {
+				alert("Please drop your map JSON file here.");
+				return;
+			}
+
+			var reader = new FileReader();
+			reader.onload = function(ev) {
+				try {
+					var data = JSON.parse(ev.target.result);
+					self.model.loadMap(data);
+				} catch(err) {
+					alert("Error parsing JSON: " + err.message);
+				}
+			};
+			reader.readAsText(file);
+		});
+	}
+
+	onTimer()
+	{
+		this.controller.update();
+		this.model.update();
+		this.view.update();
+	}
+}
+
+let game = new Game()
+let timer = setInterval(function() { game.onTimer() }, 40)
+
+</script>
+
+</body>
